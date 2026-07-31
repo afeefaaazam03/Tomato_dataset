@@ -1,0 +1,244 @@
+# Tomato ripeness multi-task benchmark configuration.
+# Mirrors the structure of the Blueberry-Ripeness-Dataset repo's fresh_benchmark_514.yaml,
+# adapted to the Silal tomato ripeness classes and to this dataset's raw layout
+# (RGB images + Mask/<class>/ silhouettes + a COCO-style Json_Output/*.json).
+
+project_name: silal_tomato_ripeness_benchmark_535
+data_root: data/raw/Set1_535
+output_root: outputs/tomato_benchmark_535
+
+# Ripeness progression per the Silal "Quality Standard Guide For Tomato" (Green=1 .. Red=6).
+# These must exactly match the COCO "categories" names in Json_Output/*.json and the
+# Mask/<name>/ subfolder names.
+classes:
+  - Green
+  - Breakers
+  - Turning
+  - Pink
+  - Light Red
+  - Red
+
+paths:
+  image_dir: "."           # RGB photos sit directly under data_root (not a subfolder)
+  mask_dir: Mask            # Mask/<class_name>/ + Mask/Overall/
+  json_dir: Json_Output     # first *.json found here is used as the COCO annotation source
+  # fixed_split_manifest: outputs/tomato_benchmark_535/metadata/dataset_manifest.csv  # optional override
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+  seed: 42
+  # Images are extracted video frames (see docs/Preprocessing_Pipeline.md); frames within
+  # block_size frame-numbers of each other are grouped and assigned to the same split so that
+  # near-duplicate adjacent frames never leak across train/val/test.
+  block_size: 100
+
+annotation:
+  image_extensions: [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
+  mask_threshold: 127
+  min_component_area: 64
+  crop_padding: 0.18
+  crop_min_size: 20
+  save_overlay_count: 12
+  yolo_image_size: 1024
+  overall_mask_aliases: ["Overall", "All", "ALL", "all"]
+  # Experimental: crop away a top band of each padded instance box to reduce calyx/stem
+  # influence on color-based ripeness cues. Disabled by default -- see docs/Preprocessing_Pipeline.md.
+  stem_trim_top_ratio: 0.0
+
+# Tomato-specific augmentation for the classification task (see datasets.py::_color_jitter).
+# Rotation is safe because a single cropped fruit is roughly rotation-invariant; hue jitter is
+# kept small because ripeness itself is a hue rotation and an aggressive jitter can mimic a
+# different class.
+augmentation:
+  classification:
+    rotation_degrees: 15.0
+    jitter_strength: 0.15
+    hue_jitter: 0.02
+
+training:
+  seed: 42
+  epochs: 40
+  quick_epochs: 2
+  batch_size: 8
+  num_workers: 4
+  lr: 0.0003
+  weight_decay: 0.05
+  early_stopping_patience: 8
+  amp: true
+  pretrained: true
+
+task_defaults:
+  classification:
+    image_size: 224
+    batch_size: 24
+    epochs: 40
+    val_metric: macro_f1
+  counting:
+    image_size: 384
+    batch_size: 12
+    epochs: 40
+    target: total
+    val_metric: mae
+  segmentation:
+    image_size: 512
+    batch_size: 4
+    epochs: 60
+    val_metric: miou_foreground
+  detection:
+    image_size: 768
+    batch_size: 2
+    epochs: 50
+    score_threshold: 0.25
+    val_metric: map50
+
+tasks:
+  # ------------------------------------------------------------------
+  # Classification: crop-level ripeness grading. This is the primary task requested
+  # for this project -- 6 classes, best-checkpoint-on-macro-F1, confusion matrix,
+  # per-class report, sample-prediction grid.
+  # ------------------------------------------------------------------
+  classification:
+    convnextv2_tiny_balanced:
+      display_name: ConvNeXtV2-T Balanced (recommended)
+      family: Modern CNN, class-balanced
+      model_name: convnextv2_tiny.fcmae_ft_in22k_in1k
+      balanced_sampler: true
+      class_weighted_loss: true
+      label_smoothing: 0.02
+    convnextv2_tiny:
+      display_name: ConvNeXtV2-T
+      family: Modern CNN
+      model_name: convnextv2_tiny.fcmae_ft_in22k_in1k
+    resnet50_balanced:
+      display_name: ResNet-50 Balanced
+      family: Class-balanced CNN
+      model_name: resnet50.a1_in1k
+      balanced_sampler: true
+      class_weighted_loss: true
+      label_smoothing: 0.02
+      lr: 0.00015
+      epochs: 50
+    resnet50:
+      display_name: ResNet-50
+      family: Classic CNN
+      model_name: resnet50.a1_in1k
+    efficientnetv2_s:
+      display_name: EfficientNetV2-S
+      family: Advanced scaling
+      model_name: tf_efficientnetv2_s.in21k_ft_in1k
+    mobilenetv3_large:
+      display_name: MobileNetV3-Large
+      family: Mobile optimized
+      model_name: mobilenetv3_large_100.ra_in1k
+    efficientnet_b4:
+      display_name: EfficientNet-B4
+      family: Compound scaling
+      model_name: tf_efficientnet_b4.ns_jft_in1k
+    swin_tiny:
+      display_name: Swin-T
+      family: Hierarchical Transformer
+      model_name: swin_tiny_patch4_window7_224.ms_in1k
+    deit3_small:
+      display_name: DeiT-III-S
+      family: Data-efficient Transformer
+      model_name: deit3_small_patch16_224.fb_in22k_ft_in1k
+    maxvit_tiny:
+      display_name: MaxViT-T
+      family: Hybrid CNN-Transformer
+      model_name: maxvit_tiny_tf_224.in1k
+    eva02_small:
+      display_name: EVA02-S
+      family: Frontier self-supervised Transformer
+      model_name: eva02_small_patch14_336.mim_in22k_ft_in1k
+      image_size: 336
+    dinov2_vitb14_linear:
+      display_name: DINOv2 ViT-B/14 + Linear
+      family: Self-supervised transfer (frozen backbone)
+      model_name: vit_base_patch14_dinov2.lvd142m
+      linear_probe: true
+      image_size: 518
+
+  # ------------------------------------------------------------------
+  # Counting: total tomato instances per image (from COCO annotation counts).
+  # ------------------------------------------------------------------
+  counting:
+    count_convnextv2_tiny:
+      display_name: ConvNeXtV2-T Regression
+      family: Direct regression
+      model_name: convnextv2_tiny.fcmae_ft_in22k_in1k
+    count_resnet50:
+      display_name: ResNet-50 Regression
+      family: Direct regression
+      model_name: resnet50.a1_in1k
+    count_efficientnetv2_s:
+      display_name: EfficientNetV2-S Regression
+      family: Direct regression
+      model_name: tf_efficientnetv2_s.in21k_ft_in1k
+    count_mobilenetv3_large:
+      display_name: MobileNetV3-Large Regression
+      family: Direct regression
+      model_name: mobilenetv3_large_100.ra_in1k
+
+  # ------------------------------------------------------------------
+  # Segmentation: per-pixel ripeness class using the semantic masks built from Mask/<class>/.
+  # ------------------------------------------------------------------
+  segmentation:
+    fpn_convnextv2_tiny:
+      display_name: FPN ConvNeXtV2-T
+      family: Modern CNN segmentation
+      framework: timm_fpn
+      model_name: convnextv2_tiny.fcmae_ft_in22k_in1k
+    fpn_resnet50:
+      display_name: FPN ResNet-50
+      family: FPN semantic segmentation
+      framework: timm_fpn
+      model_name: resnet50.a1_in1k
+    deeplabv3_resnet50:
+      display_name: DeepLabV3 ResNet-50
+      family: Atrous CNN
+      framework: torchvision
+      model_name: deeplabv3_resnet50
+    lraspp_mobilenet_v3_large:
+      display_name: LR-ASPP MobileNetV3
+      family: Mobile semantic segmentation
+      framework: torchvision
+      model_name: lraspp_mobilenet_v3_large
+
+  # ------------------------------------------------------------------
+  # Detection: per-instance ripeness boxes (useful for counting/localizing on full scenes).
+  # ------------------------------------------------------------------
+  detection:
+    fasterrcnn_resnet50_fpn_v2:
+      display_name: Faster R-CNN ResNet-50 FPN v2
+      family: Two-stage detector
+      framework: torchvision
+      model_name: fasterrcnn_resnet50_fpn_v2
+    retinanet_resnet50_fpn_v2:
+      display_name: RetinaNet ResNet-50 FPN v2
+      family: One-stage detector
+      framework: torchvision
+      model_name: retinanet_resnet50_fpn_v2
+    fcos_resnet50_fpn:
+      display_name: FCOS ResNet-50 FPN
+      family: Anchor-free detector
+      framework: torchvision
+      model_name: fcos_resnet50_fpn
+    ssdlite320_mobilenet_v3_large:
+      display_name: SSDLite MobileNetV3
+      family: Mobile single-shot detector
+      framework: torchvision
+      model_name: ssdlite320_mobilenet_v3_large
+    maskrcnn_resnet50_fpn:
+      display_name: Mask R-CNN ResNet-50 FPN
+      family: Instance segmentation detector
+      framework: torchvision
+      model_name: maskrcnn_resnet50_fpn
+
+optional_exports:
+  yolo:
+    enabled: true
+    models: ["yolo11n", "yolo11s", "rtdetr-l"]
+  coco:
+    enabled: true

@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/
+data/raw/
+data/combined_tomato/
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+*.zip
+
+# Local/editor state and temporary files
+.claude/
+*.bak
+
+# Generated audit bundles and binary manuscript exports
+audit_results/
+*.docx
