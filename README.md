@@ -114,18 +114,6 @@ extracted crops after step 1 above.
   crops use padded, per-instance bounding boxes rather than a fixed aspect ratio, and rotation
   augmentation is used to build orientation invariance.
 
-## Known Limitations / What's Not Included
-
-- The ~10 bespoke "BerryMTL" research architectures from the blueberry repo (ROI-attention,
-  CenterDet, contrastive pretraining, SAHI tiling, teacher-aligned distillation, etc.) are **not**
-  ported here. Those were iteratively hand-tuned over many experiments specifically for the
-  blueberry dataset, and porting them blind (without your real images to validate against) would
-  not be a meaningful benchmark. This repo instead gives you the same 4-task framework with the
-  standard/baseline model zoo (the same foundation the blueberry repo's own baselines use).
-- YOLO/RT-DETR training itself isn't wired up (the data-prep step does export YOLO-format labels
-  to `outputs/.../03_detection/yolo/`, same as the blueberry repo, for use with `ultralytics`
-  separately).
-
 ## Requirements
 
 See `requirements.txt`. PyTorch + a CUDA build matching your GPU is recommended for real training
